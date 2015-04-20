@@ -56,6 +56,7 @@
 #include <linux/kallsyms.h>
 #include <linux/swapops.h>
 #include <linux/elf.h>
+#include <linux/nvmhash.h>
 
 #include <asm/io.h>
 #include <asm/pgalloc.h>
@@ -2178,6 +2179,7 @@ gotten:
 		if (!new_page)
 			goto oom;
 	} else {
+		NVMHash_COW(page_to_pfn(old_page));				
 		new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, address);
 		if (!new_page)
 			goto oom;

@@ -4,6 +4,7 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/uaccess.h>
+#include <linux/nvmhash.h>
 
 #include <asm/cacheflush.h>
 
@@ -105,6 +106,8 @@ __alloc_zeroed_user_highpage(gfp_t movableflags,
 			struct vm_area_struct *vma,
 			unsigned long vaddr)
 {
+	NVMHash_zeroHash();			
+
 	struct page *page = alloc_page_vma(GFP_HIGHUSER | movableflags,
 			vma, vaddr);
 

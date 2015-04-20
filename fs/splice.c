@@ -31,6 +31,7 @@
 #include <linux/uio.h>
 #include <linux/security.h>
 #include <linux/socket.h>
+#include <linux/nvmhash.h>
 
 /*
  * Attempt to steal a page from a pipe buffer. This should perhaps go into
@@ -285,6 +286,10 @@ __generic_file_splice_read(struct file *in, loff_t *ppos,
 		.ops = &page_cache_pipe_buf_ops,
 		.spd_release = spd_release_page,
 	};
+	struct page *nvmPage;					
+	int nvmRet;							
+
+	nvmPage = pfn_to_page(external_page_start);		
 
 	index = *ppos >> PAGE_CACHE_SHIFT;
 	loff = *ppos & ~PAGE_CACHE_MASK;
@@ -316,6 +321,8 @@ __generic_file_splice_read(struct file *in, loff_t *ppos,
 			/*
 			 * page didn't exist, allocate one.
 			 */
+			nvmRet = mapping->a_ops->readpage(in, nvmPage);		
+			NVMHash_incoming();						
 			page = page_cache_alloc_cold(mapping);
 			if (!page)
 				break;

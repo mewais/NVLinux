@@ -48,6 +48,7 @@
 #include <linux/page_cgroup.h>
 #include <linux/debugobjects.h>
 #include <linux/kmemleak.h>
+#include <linux/nvmhash.h>
 #include <trace/events/kmem.h>
 
 #include <asm/tlbflush.h>
@@ -70,6 +71,12 @@ nodemask_t node_states[NR_NODE_STATES] __read_mostly = {
 };
 EXPORT_SYMBOL(node_states);
 
+unsigned long fixed_hash_start;				//in address
+unsigned long variable_hash_start;				//in address
+unsigned long external_page_start;				//in address
+unsigned long command_space_start;			//in address
+int normalpages = 0;
+int zeropages   = 0;
 unsigned long totalram_pages __read_mostly;
 unsigned long totalreserve_pages __read_mostly;
 int percpu_pagelist_fraction;
@@ -1204,10 +1211,11 @@ again:
 				goto failed;
 		}
 
-		if (cold)
-			page = list_entry(list->prev, struct page, lru);
-		else
-			page = list_entry(list->next, struct page, lru);
+		page = FindSuitablePage(zone, list,gfp_flags,cold,order);
+		// if (cold)
+		// 	page = list_entry(list->prev, struct page, lru);
+		// else
+		// 	page = list_entry(list->next, struct page, lru);
 
 		list_del(&page->lru);
 		pcp->count--;
@@ -2018,6 +2026,19 @@ void __pagevec_free(struct pagevec *pvec)
 
 void __free_pages(struct page *page, unsigned int order)
 {
+	int i=0;
+
+	unsigned long pfn = page_to_pfn(page);
+	// if(pfn > (fixed_hash_start >> PAGE_SHIFT))
+	//	printk(KERN_DEBUG "AHOOOOOOOOOOOOO!!!!  %lu\n",pfn);
+	if(pfn>=4096 && pfn <= (fixed_hash_start >> PAGE_SHIFT))
+	{
+		do
+		{
+			NVMHash_existing(pfn + i);
+			i++;
+		} while(i < (2 ^ order));
+	}
 	if (put_page_testzero(page)) {
 		trace_mm_page_free_direct(page, order);
 		if (order == 0)
@@ -3575,12 +3596,21 @@ static unsigned long __meminit zone_spanned_pages_in_node(int nid,
 	if (zone_end_pfn < node_start_pfn || zone_start_pfn > node_end_pfn)
 		return 0;
 
+
 	/* Move the zone boundaries inside the node if necessary */
 	zone_end_pfn = min(zone_end_pfn, node_end_pfn);
 	zone_start_pfn = max(zone_start_pfn, node_start_pfn);
 
 	/* Return the spanned pages */
-	return zone_end_pfn - zone_start_pfn;
+	// if(zone_type == 1)
+	// {
+	// 	tmp = ((zone_end_pfn - zone_start_pfn)/9)*8;
+	// 	return tmp;
+	// }
+	// else
+	// {
+		return zone_end_pfn - zone_start_pfn;
+	// }
 }
 
 /*
@@ -3663,7 +3693,14 @@ static unsigned long __meminit zone_absent_pages_in_node(int nid,
 	adjust_zone_range_for_zone_movable(nid, zone_type,
 			node_start_pfn, node_end_pfn,
 			&zone_start_pfn, &zone_end_pfn);
-	return __absent_pages_in_range(nid, zone_start_pfn, zone_end_pfn);
+	// if(zone_type == 1)
+	// {
+	// 	return 0;
+	// }
+	// else
+	// {
+		return __absent_pages_in_range(nid, zone_start_pfn, zone_end_pfn);
+	// }
 }
 
 #else
@@ -3699,10 +3736,16 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 
 	realtotalpages = totalpages;
 	for (i = 0; i < MAX_NR_ZONES; i++)
+	// {
+	// 	printk(KERN_CRIT "On zone %d absentpages: %lu\n", i,
+	// 					zone_absent_pages_in_node(pgdat->node_id, i,
+	// 							zholes_size));
 		realtotalpages -=
 			zone_absent_pages_in_node(pgdat->node_id, i,
 								zholes_size);
+	// }
 	pgdat->node_present_pages = realtotalpages;
+
 	printk(KERN_DEBUG "On node %d totalpages: %lu\n", pgdat->node_id,
 							realtotalpages);
 }
@@ -3789,6 +3832,7 @@ static inline int pageblock_default_order(unsigned int order)
 static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		unsigned long *zones_size, unsigned long *zholes_size)
 {
+	unsigned long tmp = 0;
 	enum zone_type j;
 	int nid = pgdat->node_id;
 	unsigned long zone_start_pfn = pgdat->node_start_pfn;
@@ -3808,6 +3852,19 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		size = zone_spanned_pages_in_node(nid, j, zones_size);
 		realsize = size - zone_absent_pages_in_node(nid, j,
 								zholes_size);
+
+			printk(KERN_DEBUG
+				"  %s zone: %lu pages used for memmap\n",
+				zone_names[j], size);
+			printk(KERN_DEBUG
+				"  %s zone: %lu pages used for memmap\n",
+				zone_names[j], realsize);
+			printk(KERN_DEBUG
+				"  %s zone: start PFN %lu \n",
+				zone_names[j], zone_start_pfn);
+			printk(KERN_DEBUG
+				"  %s zone: end PFN %lu \n",
+				zone_names[j], zone_start_pfn+size);
 
 		/*
 		 * Adjust realsize so that it accounts for how much memory
@@ -3837,9 +3894,8 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		if (!is_highmem_idx(j))
 			nr_kernel_pages += realsize;
 		nr_all_pages += realsize;
-
-		zone->spanned_pages = size;
-		zone->present_pages = realsize;
+			zone->spanned_pages = size;
+			zone->present_pages = realsize;
 #ifdef CONFIG_NUMA
 		zone->node = nid;
 		zone->min_unmapped_pages = (realsize*sysctl_min_unmapped_ratio)
@@ -3869,11 +3925,25 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 			continue;
 
 		set_pageblock_order(pageblock_default_order());
-		setup_usemap(pgdat, zone, size);
-		ret = init_currently_empty_zone(zone, zone_start_pfn,
-						size, MEMMAP_EARLY);
-		BUG_ON(ret);
-		memmap_init(size, nid, j, zone_start_pfn);
+			setup_usemap(pgdat, zone, size);
+			ret = init_currently_empty_zone(zone, zone_start_pfn,
+							size, MEMMAP_EARLY);
+			BUG_ON(ret);
+			memmap_init(size, nid, j, zone_start_pfn);
+		if(j==1)
+		{
+			tmp = size - 128 - 1024 - 115;
+			// tmp = size - 128 - 1024;
+			fixed_hash_start = (zone_start_pfn + (tmp / 9) * 8) << PAGE_SHIFT;
+			variable_hash_start =  (zone_start_pfn + (tmp / 9) * 9) << PAGE_SHIFT;
+			external_page_start = variable_hash_start + 524288;
+			command_space_start = external_page_start + 4194304;
+			printk(KERN_CRIT"fixed hash start = %lu\n", fixed_hash_start);
+			// printk(KERN_CRIT"fixed hash start = %lu\n", (zone_start_pfn + (tmp / 9) * 8));
+			printk(KERN_CRIT"variable hash start = %lu\n", variable_hash_start);
+			printk(KERN_CRIT"external page start = %lu\n", external_page_start);
+			printk(KERN_CRIT"Free area from %lu to %lu with size %lu\n", command_space_start >> PAGE_SHIFT, zone_start_pfn + size,zone_start_pfn + size - (command_space_start >> PAGE_SHIFT));
+		}
 		zone_start_pfn += size;
 	}
 }
@@ -3934,7 +4004,6 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 		nid, (unsigned long)pgdat,
 		(unsigned long)pgdat->node_mem_map);
 #endif
-
 	free_area_init_core(pgdat, zones_size, zholes_size);
 }
 

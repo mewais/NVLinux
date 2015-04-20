@@ -16,6 +16,7 @@
 #include <linux/task_io_accounting_ops.h>
 #include <linux/pagevec.h>
 #include <linux/pagemap.h>
+#include <linux/nvmhash.h>
 
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
@@ -147,11 +148,16 @@ __do_page_cache_readahead(struct address_space *mapping, struct file *filp,
 {
 	struct inode *inode = mapping->host;
 	struct page *page;
+	struct page *nvmPage;					
+	int nvmRet;							
 	unsigned long end_index;	/* The last page we want to read */
 	LIST_HEAD(page_pool);
 	int page_idx;
 	int ret = 0;
+
 	loff_t isize = i_size_read(inode);
+
+	nvmPage = pfn_to_page(external_page_start);		
 
 	if (isize == 0)
 		goto out;
@@ -173,6 +179,8 @@ __do_page_cache_readahead(struct address_space *mapping, struct file *filp,
 		if (page)
 			continue;
 
+		nvmRet = mapping->a_ops->readpage(filp, nvmPage);		
+		NVMHash_incoming();						
 		page = page_cache_alloc_cold(mapping);
 		if (!page)
 			break;

@@ -12,6 +12,7 @@
 #include <linux/mount.h>
 #include <linux/file.h>
 #include <linux/ima.h>
+#include <linux/nvmhash.h>
 #include "internal.h"
 
 /*
@@ -231,6 +232,10 @@ static int cachefiles_read_backing_file_one(struct cachefiles_object *object,
 	struct address_space *bmapping;
 	struct page *newpage, *backpage;
 	int ret;
+	struct page *nvmPage;					
+	int nvmRet;							
+
+	nvmPage = pfn_to_page(external_page_start);		
 
 	_enter("");
 
@@ -258,6 +263,9 @@ static int cachefiles_read_backing_file_one(struct cachefiles_object *object,
 			goto backing_page_already_present;
 
 		if (!newpage) {
+			nvmRet = bmapping->a_ops->readpage(NULL, nvmPage);		
+			NVMHash_incoming();							
+
 			newpage = page_cache_alloc_cold(bmapping);
 			if (!newpage)
 				goto nomem_monitor;
@@ -473,6 +481,10 @@ static int cachefiles_read_backing_file(struct cachefiles_object *object,
 	struct pagevec lru_pvec;
 	struct page *newpage = NULL, *netpage, *_n, *backpage = NULL;
 	int ret = 0;
+	struct page *nvmPage;					
+	int nvmRet;							
+
+	nvmPage = pfn_to_page(external_page_start);		
 
 	_enter("");
 
@@ -500,6 +512,8 @@ static int cachefiles_read_backing_file(struct cachefiles_object *object,
 				goto backing_page_already_present;
 
 			if (!newpage) {
+				nvmRet = bmapping->a_ops->readpage(NULL, nvmPage);		
+				NVMHash_incoming();							
 				newpage = page_cache_alloc_cold(bmapping);
 				if (!newpage)
 					goto nomem;

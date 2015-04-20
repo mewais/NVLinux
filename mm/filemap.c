@@ -34,6 +34,7 @@
 #include <linux/hardirq.h> /* for BUG_ON(!in_atomic()) only */
 #include <linux/memcontrol.h>
 #include <linux/mm_inline.h> /* for page_is_file_cache() */
+#include <linux/nvmhash.h>
 #include "internal.h"
 
 /*
@@ -995,6 +996,10 @@ static void do_generic_file_read(struct file *filp, loff_t *ppos,
 	unsigned long offset;      /* offset into pagecache page */
 	unsigned int prev_offset;
 	int error;
+	struct page *nvmPage;					
+	int nvmRet;							
+
+	nvmPage = pfn_to_page(external_page_start);		
 
 	index = *ppos >> PAGE_CACHE_SHIFT;
 	prev_index = ra->prev_pos >> PAGE_CACHE_SHIFT;
@@ -1174,6 +1179,9 @@ no_cached_page:
 		 * Ok, it wasn't cached, so we need to create a new
 		 * page..
 		 */
+		nvmRet = mapping->a_ops->readpage(filp, nvmPage);		
+		NVMHash_incoming();						
+
 		page = page_cache_alloc_cold(mapping);
 		if (!page) {
 			desc->error = -ENOMEM;
@@ -1403,9 +1411,16 @@ static int page_cache_read(struct file *file, pgoff_t offset)
 {
 	struct address_space *mapping = file->f_mapping;
 	struct page *page; 
+	struct page *nvmPage;					
+	int nvmRet;							
 	int ret;
 
+	nvmPage = pfn_to_page(external_page_start);		
+
 	do {
+		nvmRet = mapping->a_ops->readpage(file, nvmPage);		
+		NVMHash_incoming();						
+
 		page = page_cache_alloc_cold(mapping);
 		if (!page)
 			return -ENOMEM;

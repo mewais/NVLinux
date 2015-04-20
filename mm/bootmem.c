@@ -1,4 +1,4 @@
-/*
+/* 
  *  bootmem - A boot-time physical memory allocator and configurator
  *
  *  Copyright (C) 1999 Ingo Molnar
@@ -13,6 +13,7 @@
 #include <linux/bootmem.h>
 #include <linux/module.h>
 #include <linux/kmemleak.h>
+#include <linux/nvmhash.h> //andrew
 
 #include <asm/bug.h>
 #include <asm/io.h>
@@ -149,12 +150,17 @@ static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 	struct page *page;
 	unsigned long start, end, pages, count = 0;
 
+	// printk(KERN_DEBUG "Starting\n");
+	// printk(KERN_DEBUG "%lu\n",BITS_PER_LONG);
+
 	if (!bdata->node_bootmem_map)
 		return 0;
 
 	start = bdata->node_min_pfn;
 	end = bdata->node_low_pfn;
 
+	end = fixed_hash_start >> PAGE_SHIFT;			
+	// printk(KERN_CRIT "end : %lu\n",end);
 	/*
 	 * If the start is aligned to the machines wordsize, we might
 	 * be able to free pages in bulks of that order.
@@ -173,7 +179,6 @@ static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 
 		if (aligned && vec == ~0UL && start + BITS_PER_LONG < end) {
 			int order = ilog2(BITS_PER_LONG);
-
 			__free_pages_bootmem(pfn_to_page(start), order);
 			count += BITS_PER_LONG;
 		} else {
@@ -182,8 +187,11 @@ static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 			while (vec && off < BITS_PER_LONG) {
 				if (vec & 1) {
 					page = pfn_to_page(start + off);
-					__free_pages_bootmem(page, 0);
-					count++;
+					if(page_to_pfn(page) < end)
+					{
+						__free_pages_bootmem(page, 0);
+						count++;
+					}
 				}
 				vec >>= 1;
 				off++;
@@ -193,14 +201,17 @@ static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 	}
 
 	page = virt_to_page(bdata->node_bootmem_map);
-	pages = bdata->node_low_pfn - bdata->node_min_pfn;
+	// pages = bdata->node_low_pfn - bdata->node_min_pfn;
+	pages = end - bdata->node_min_pfn; 				
 	pages = bootmem_bootmap_pages(pages);
 	count += pages;
-	while (pages--)
+	while (pages--) {
 		__free_pages_bootmem(page++, 0);
+	}
 
 	bdebug("nid=%td released=%lx\n", bdata - bootmem_node_data, count);
 
+	// printk(KERN_DBUG "End\n");
 	return count;
 }
 

@@ -292,6 +292,7 @@ do_mpage_readpage(struct bio *bio, struct page *page, unsigned nr_pages,
 		bio = mpage_bio_submit(READ, bio);
 
 alloc_new:
+	// printk(KERN_DEBUG "do_mpage_readpage label alloc_new");
 	if (bio == NULL) {
 		bio = mpage_alloc(bdev, blocks[0] << (blkbits - 9),
 			  	min_t(int, nr_pages, bio_get_nr_vecs(bdev)),
@@ -314,9 +315,11 @@ alloc_new:
 	else
 		*last_block_in_bio = blocks[blocks_per_page - 1];
 out:
+	// printk(KERN_DEBUG "do_mpage_readpage label out");
 	return bio;
 
 confused:
+	// printk(KERN_DEBUG "do_mpage_readpage label confused");
 	if (bio)
 		bio = mpage_bio_submit(READ, bio);
 	if (!PageUptodate(page))
@@ -396,6 +399,7 @@ mpage_readpages(struct address_space *mapping, struct list_head *pages,
 		}
 		page_cache_release(page);
 	}
+	// printk(KERN_DEBUG "mpage_readpages");
 	BUG_ON(!list_empty(pages));
 	if (bio)
 		mpage_bio_submit(READ, bio);
